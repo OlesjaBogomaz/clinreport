@@ -18,15 +18,22 @@ def main():
     argparser.add_argument('-i', '--input-sqlite', required=True, help='path to SQLite')
     argparser.add_argument('-t', '--target-sample', default=False, help='target (proband) sample id')
     argparser.add_argument('-o', '--output-dir', default='.', help='output directory')
+    argparser.add_argument('-l', '--legacy-sqlite', default=1, help='legacy SQLite annotators')
     args = argparser.parse_args()
 
     with sqlite3.connect(args.input_sqlite) as con:
         cur = con.cursor()
+        all_samples = [row[0] for row in cur.execute('select distinct base__sample_id from sample;').fetchall()]
         variant_cols = cur.execute('pragma table_info(variant);').fetchall()
         variant_cols = [col[1] for col in variant_cols]
-        variant_rows = cur.execute('select * from variant where base__note is not null;').fetchall()
-        variants_data = [dict(zip(variant_cols, row)) for row in variant_rows]
-        all_samples = [row[0] for row in cur.execute('select distinct base__sample_id from sample;').fetchall()]
+        if args.legacy_sqlite:
+            variant_rows = cur.execute('select * from variant where base__note in (1,2,3);').fetchall()
+            variants_data = [dict(zip(variant_cols, row)) for row in variant_rows]
+            for varaint_data in variants_data:
+                varaint_data.update(annotate_legacy(varaint_data))
+        else:
+            variant_rows = cur.execute('select * from variant where base__note is not null;').fetchall()
+            variants_data = [dict(zip(variant_cols, row)) for row in variant_rows]
 
     for sample in all_samples:
         create_doc(variants_data, sample, all_samples, sample==args.target_sample).save(os.path.join(args.output_dir, f'Заключение ({sample}).docx'))
@@ -130,8 +137,7 @@ def create_doc(variants_data: list, sample: str, all_samples: list, target_sampl
             clinvar_id = variant["clinvar_new__id"]
             clinvar_sig = variant["clinvar_new__sig"]
             clinvar_sig_subs = variant["clinvar_new__sig_subs"]
-            clinvar_sig_subs_msgs = clinvar_sig_subs2msgs(clinvar_sig_subs) or [clinvar_sig]
-            clinvar_rev_stat = variant["clinvar_new__rev_stat"]
+            clinvar_sig_subs_msgs = clinvar_sig_subs2msgs(clinvar_sig_subs) or [f'как {clinsig2msg.get(clinvar_sig, clinvar_sig)}']
             clinvar_equivalents = variant["clinvar_new__equivalents"]
             clinvar_alternatives = variant["clinvar_new__alternatives"]
             clinvar_equivalents = eval(clinvar_equivalents) if clinvar_equivalents else []
@@ -339,6 +345,68 @@ def clinvar_sig_subs2msgs(clinvar_sig_subs) -> list:
         sig, count = sig_count[:-1].split(' (')
         sig_subs_msgs.append(f'как {clinsig2msg.get(sig, sig)} {count} лабораторией(ями)')
     return sig_subs_msgs
+
+
+def annotate_legacy(variant_data: dict) -> dict:
+    extra_vcf_info = get_extra_vcf_info(variant_data)
+    for i in range(extra_vcf_info['nblocks']):
+        if not extra_vcf_info['CSQ_PICK'][i] == '1':
+            continue
+        annotation = {
+            'vep_csq__symbol': extra_vcf_info['CSQ_SYMBOL'][i],
+            'vep_csq__transcript': extra_vcf_info['CSQ_Feature'][i],
+            'vep_csq__hgvsc': extra_vcf_info['CSQ_HGVSc'][i].split(':')[-1],
+            'vep_csq__hgvsp': extra_vcf_info['CSQ_HGVSp'][i].split(':')[-1],
+            'vep_csq__hgvsg': extra_vcf_info['CSQ_HGVSg'][i],
+            'vep_csq__consequence': extra_vcf_info['CSQ_Consequence'][i],
+            'vep_csq__biotype': extra_vcf_info['CSQ_BIOTYPE'][i],
+            'vep_csq__exon': extra_vcf_info['CSQ_EXON'][i],
+            'vep_csq__intron': extra_vcf_info['CSQ_INTRON'][i],
+            'vep_csq__strand': extra_vcf_info['CSQ_STRAND'][i],
+            'vep_csq__codons': extra_vcf_info['CSQ_Codons'][i],
+        }
+        annotation['vep_csq__refseq'] = extra_vcf_info['CSQ_MANE_SELECT'][i] if extra_vcf_info['CSQ_MANE_SELECT'][i] else None
+    annotation['vep_omim_pheno__inher'] = get_inher_from_omim_pheno(variant_data['vep_omim_pheno__pheno'])
+    for col in ['filter', 'zygosity', 'ad', 'dp']:
+        annotation[f'tagsampler_new__{col}'] = variant_data[f'vevatacmg_postaggregator__{col}']
+    annotation['tagsampler_new__samples'] = variant_data[f'vevatacmg_postaggregator__sample']
+    for col in ['id', 'sig']:
+        annotation[f'clinvar_new__{col}'] = variant_data[f'clinvar__{col}']
+    annotation['clinvar_new__sig_subs'] = annotation['clinvar_new__equivalents'] = annotation['clinvar_new__alternatives'] = None
+    return annotation
+
+
+def get_extra_vcf_info(variant_data: dict) -> dict:
+    """
+    Make each CSQ block iterable
+    """
+    nblocks = len(variant_data['extra_vcf_info__CSQ_Allele'].split(';'))
+    variant_data_transformed = {'nblocks': nblocks}
+    for key, value in variant_data.items():
+        if key.startswith('extra_vcf_info__CSQ'):
+            if value is None:
+                value = ['']*nblocks
+            else:
+                value = value.split(';')
+        variant_data_transformed[key.lstrip('extra_vcf_info__')] = value
+    return variant_data_transformed
+
+
+def get_inher_from_omim_pheno(phenotype: str) -> str:
+    if not phenotype:
+        return None
+    inheritance_map = {
+        'Autosomal dominant': 'AD',
+        'X-linked dominant': 'XD',
+        'Autosomal recessive': 'AR',
+        'X-linked recessive': 'XR'
+    }
+    inher = set()
+    for name, short in inheritance_map.items():
+        if name in phenotype:
+            inher.add(short)
+    inher = ','.join(sorted(inher))
+    return inher
 
 
 note2clinsig = {
