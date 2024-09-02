@@ -5,22 +5,40 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.enum.table import WD_TABLE_ALIGNMENT
 from datetime import date
 from math import log, floor
-import argparse
+from tkinter import Tk, filedialog, Button, ttk, Label
 import os
+import sys
 import sqlite3
 
 
 def main():
-    argparser = argparse.ArgumentParser(
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-        description='Clinical report generator',
-    )
-    argparser.add_argument('-i', '--input-sqlite', required=True, help='path to SQLite')
-    argparser.add_argument('-t', '--target-sample', default=False, help='target (proband) sample id')
-    argparser.add_argument('-o', '--output-dir', default='.', help='output directory')
-    args = argparser.parse_args()
+    input_sqlite = filedialog.askopenfilename()
+    if not input_sqlite or not str(input_sqlite).endswith('.sqlite'):
+        sys.exit(0)
 
-    with sqlite3.connect(args.input_sqlite) as con:
+    with sqlite3.connect(input_sqlite) as con:
+        cur = con.cursor()
+        all_samples = [row[0] for row in cur.execute('select distinct base__sample_id from sample;').fetchall()]
+
+    window = Tk()
+    window.title('АвтоРепорт')
+    window.geometry('600x400+300+200')
+    label = Label(text="Целевой образец (дуо/трио)")
+    label.pack()
+    lst = ttk.Combobox(window, values=all_samples, width=30, state='readonly')
+    lst.current(0)
+    lst.pack()
+    # progressbar = ttk.Progressbar(orient="horizontal", mode="indeterminate")
+    def btn_action():
+        generate_reports(input_sqlite, lst.get(), '.')
+        window.destroy()
+    btn = Button(window, text='Сгенерировать', command=btn_action)
+    btn.pack(expand=True)
+    window.mainloop()
+
+
+def generate_reports(input_sqlite, target_sample, output_dir):
+    with sqlite3.connect(input_sqlite) as con:
         cur = con.cursor()
         all_samples = [row[0] for row in cur.execute('select distinct base__sample_id from sample;').fetchall()]
         variant_cols = cur.execute('pragma table_info(variant);').fetchall()
@@ -37,11 +55,11 @@ def main():
             variants_data = [dict(zip(variant_cols, row)) for row in variant_rows]
 
     for sample in all_samples:
-        create_doc(variants_data, sample, all_samples, sample==args.target_sample).save(os.path.join(args.output_dir, f'Заключение ({sample}).docx'))
+        create_doc(variants_data, sample, all_samples, sample==target_sample).save(os.path.join(output_dir, f'Заключение ({str(sample).split(".")[0]}).docx'))
 
 
 def create_doc(variants_data: list, sample: str, all_samples: list, target_sample: bool=False, dzm: bool=True) -> Document:
-    case_table_data = [(sample, '_', '_', '_')]
+    case_table_data = [(str(sample).split('.')[0], '_', '_', '_')]
     tech_table_data = [(
         'полногеномное секвенирование (Whole Genome Sequencing)',
         '_x',
@@ -218,6 +236,7 @@ def create_doc(variants_data: list, sample: str, all_samples: list, target_sampl
                 nontarget_samples = samples.copy()
                 nontarget_samples.remove(sample)
                 if nontarget_samples:
+                    nontarget_samples = [str(sample).split('.')[0] for sample in nontarget_samples]
                     doc.add_paragraph(f'Вариант обнаружен у {", ".join(nontarget_samples)}')
                 # else:
                 #     all_nontarget_samples = all_samples.copy()
