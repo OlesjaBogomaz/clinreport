@@ -18,7 +18,6 @@ def main():
     argparser.add_argument('-i', '--input-sqlite', required=True, help='path to SQLite')
     argparser.add_argument('-t', '--target-sample', default=False, help='target (proband) sample id')
     argparser.add_argument('-o', '--output-dir', default='.', help='output directory')
-    argparser.add_argument('-l', '--legacy-sqlite', type=int, default=1, help='legacy SQLite annotators <0|1>')
     args = argparser.parse_args()
 
     with sqlite3.connect(args.input_sqlite) as con:
@@ -26,12 +25,14 @@ def main():
         all_samples = [row[0] for row in cur.execute('select distinct base__sample_id from sample;').fetchall()]
         variant_cols = cur.execute('pragma table_info(variant);').fetchall()
         variant_cols = [col[1] for col in variant_cols]
-        if args.legacy_sqlite == 1:
+        if 'vep_csq__symbol' not in variant_cols:
+            # legacy SQLite
             variant_rows = cur.execute('select * from variant where base__note in (1,2,3);').fetchall()
             variants_data = [dict(zip(variant_cols, row)) for row in variant_rows]
             for varaint_data in variants_data:
                 varaint_data.update(annotate_legacy(varaint_data))
         else:
+            # new SQLite
             variant_rows = cur.execute('select * from variant where base__note is not null;').fetchall()
             variants_data = [dict(zip(variant_cols, row)) for row in variant_rows]
 
