@@ -155,8 +155,8 @@ def create_doc(variants_data: list, sample: str, all_samples: list, target_sampl
             gnomad_af_msg = float2percent(gnomad_af) if gnomad_af else '-'
             zygosity = variant["tagsampler_new__zygosity"]
             zygosity_msg = zygosity2msg[zygosity][2] if zygosity else ''
-            ad = variant["tagsampler_new__ad"] or '_'
-            ad_msg = f"с глубиной прочтения {ad}x"
+            dp = variant["tagsampler_new__dp"] or '_'
+            dp_msg = f"с глубиной прочтения {dp}x"
             gerp_rs_score = variant["gerp__gerp_rs"]
             insilico_prediction = predict_insilico(variant["dbscsnv__ada_score"], variant["metarnn__score"], variant["revel__score"], variant['alphamissense__score'], variant["phylop100__score"])
             clinvar_id = variant["clinvar_new__id"]
@@ -174,7 +174,7 @@ def create_doc(variants_data: list, sample: str, all_samples: list, target_sampl
             intro_paragraph = doc.add_paragraph('\n')
             intro_paragraph.add_run(f'Обнаружен ранее _ описанный в литературе вариант ({variation_msg}) {zygosity_msg} {gene_part_msg} гена ')
             intro_paragraph.add_run(f'{symbol}').italic = True
-            intro_paragraph.add_run(f', {leading_to_msg}, {ad_msg}.')
+            intro_paragraph.add_run(f', {leading_to_msg}, {dp_msg}.')
 
             if omim_pheno:
                 omim_paragraph = doc.add_paragraph()
