@@ -162,7 +162,7 @@ def create_doc(variants_data: list, sample: str, all_samples: list, target_sampl
             clinvar_id = variant["clinvar_new__id"]
             clinvar_sig = variant["clinvar_new__sig"]
             clinvar_sig_subs = variant["clinvar_new__sig_subs"]
-            clinvar_sig_subs_msgs = clinvar_sig_subs2msgs(clinvar_sig_subs) or [f'как {clinsig2msg.get(clinvar_sig, clinvar_sig)}']
+            clinvar_sig_subs_msgs = clinvar_sig_subs2msgs(clinvar_sig_subs) or [f'как {clinsig2msg.get(clinvar_sig, clinvar_sig)}'] if clinvar_sig else []
             clinvar_equivalents = variant["clinvar_new__equivalents"]
             clinvar_alternatives = variant["clinvar_new__alternatives"]
             clinvar_equivalents = eval(clinvar_equivalents) if clinvar_equivalents else []
