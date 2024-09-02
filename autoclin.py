@@ -18,7 +18,7 @@ def main():
     argparser.add_argument('-i', '--input-sqlite', required=True, help='path to SQLite')
     argparser.add_argument('-t', '--target-sample', default=False, help='target (proband) sample id')
     argparser.add_argument('-o', '--output-dir', default='.', help='output directory')
-    argparser.add_argument('-l', '--legacy-sqlite', default=1, help='legacy SQLite annotators')
+    argparser.add_argument('-l', '--legacy-sqlite', type=int, default=1, help='legacy SQLite annotators <0|1>')
     args = argparser.parse_args()
 
     with sqlite3.connect(args.input_sqlite) as con:
@@ -26,7 +26,7 @@ def main():
         all_samples = [row[0] for row in cur.execute('select distinct base__sample_id from sample;').fetchall()]
         variant_cols = cur.execute('pragma table_info(variant);').fetchall()
         variant_cols = [col[1] for col in variant_cols]
-        if args.legacy_sqlite:
+        if args.legacy_sqlite == 1:
             variant_rows = cur.execute('select * from variant where base__note in (1,2,3);').fetchall()
             variants_data = [dict(zip(variant_cols, row)) for row in variant_rows]
             for varaint_data in variants_data:
@@ -104,9 +104,15 @@ def create_doc(variants_data: list, sample: str, all_samples: list, target_sampl
     else:
         for variant in variants_data_for_interpretation:
             symbol = variant["vep_csq__symbol"]
+            transcript = variant['vep_csq__transcript']
+            refseq = variant['vep_csq__refseq']
             hgvsg = variant["vep_csq__hgvsg"]
             hgvsc = variant["vep_csq__hgvsc"]
+            hgvsc_msg = f'{refseq}:{hgvsc}' if refseq else f'{transcript}:{hgvsc}'
             hgvsp = variant["vep_csq__hgvsp"]
+            hgvsp_msg = f'p.({hgvsp[2:]})' if hgvsp else ''
+            rsid = variant['dbsnp__rsid']
+            variation_msg = ', '.join([msg for msg in [hgvsg, hgvsc_msg, rsid] if msg])
             consequence = variant["vep_csq__consequence"]
             exon, intron = variant["vep_csq__exon"], variant["vep_csq__intron"]
             if exon:
@@ -114,15 +120,15 @@ def create_doc(variants_data: list, sample: str, all_samples: list, target_sampl
             elif intron:
                 gene_part_msg = f"в {intron.split('/')[0]} интроне из {intron.split('/')[1]} интронов"
             if 'missense' in consequence:
-                leading_to_msg = f'который приводит к аминокислотной замене {hgvsp}'
+                leading_to_msg = f'который приводит к аминокислотной замене {hgvsp_msg}'
             elif 'synon' in consequence:
-                leading_to_msg = f'который приводит / может приводить к абберантному сплайсингу {hgvsp}'
+                leading_to_msg = f'который приводит / может приводить к абберантному сплайсингу {hgvsp_msg}'
             elif 'intron' in consequence:
                 leading_to_msg = f'который приводит / может приводить к абберантному сплайсингу'
             elif 'shift' in consequence:
-                leading_to_msg = f'который приводит к сдвигу рамки считывания и образованию преждевременного стоп-кодона {hgvsp}'
+                leading_to_msg = f'который приводит к сдвигу рамки считывания и образованию преждевременного стоп-кодона {hgvsp_msg}'
             elif 'stop' in consequence:
-                leading_to_msg = f'который приводит к образованию преждевременного стоп-кодона {hgvsp}'
+                leading_to_msg = f'который приводит к образованию преждевременного стоп-кодона {hgvsp_msg}'
             elif 'splice' in consequence:
                 leading_to_msg = f'который приводит к разрушению канонического сайта сплайсинга'
             omim_pheno, omim_id = variant["vep_omim_pheno__pheno"], variant["vep_omim_pheno__id"]
@@ -147,7 +153,7 @@ def create_doc(variants_data: list, sample: str, all_samples: list, target_sampl
             clinsig = note2clinsig[variant["base__note"]]
 
             intro_paragraph = doc.add_paragraph('\n')
-            intro_paragraph.add_run(f'Обнаружен ранее _ описанный в литературе вариант {hgvsg}, {hgvsc} {zygosity_msg} {gene_part_msg} гена ')
+            intro_paragraph.add_run(f'Обнаружен ранее _ описанный в литературе вариант ({variation_msg}) {zygosity_msg} {gene_part_msg} гена ')
             intro_paragraph.add_run(f'{symbol}').italic = True
             intro_paragraph.add_run(f', {leading_to_msg}, {ad_msg}.')
 
@@ -212,10 +218,10 @@ def create_doc(variants_data: list, sample: str, all_samples: list, target_sampl
                 nontarget_samples.remove(sample)
                 if nontarget_samples:
                     doc.add_paragraph(f'Вариант обнаружен у {", ".join(nontarget_samples)}')
-                else:
-                    all_nontarget_samples = all_samples.copy()
-                    all_nontarget_samples.remove(sample)
-                    doc.add_paragraph(f'Вариант не обнаружен у {", ".join(all_nontarget_samples)}, таким образом является de novo.')
+                # else:
+                #     all_nontarget_samples = all_samples.copy()
+                #     all_nontarget_samples.remove(sample)
+                #     doc.add_paragraph(f'Вариант не обнаружен у {", ".join(all_nontarget_samples)}, таким образом является de novo.')
 
             doc.add_paragraph(f'По совокупности сведений вариант расценивается как {clinsig}.')
             doc.add_paragraph('Рекомендуется сопоставление фенотипа пациента с фенотипом заболеваний, ассоциированных с геном.')
@@ -264,19 +270,24 @@ def form_snv_table_data(variants_data: list, pathogenicity_col=False) -> list:
     for variant in variants_data:
         symbol = variant['vep_csq__symbol']
         omim_pheno = variant['vep_omim_pheno__pheno']
-        hgvsg = variant['vep_csq__hgvsg']
+        chrom = variant['base__chrom']
+        pos = variant['extra_vcf_info__pos']
+        ref = variant['extra_vcf_info__ref']
+        alt = variant['extra_vcf_info__alt']
+        spdi = f'{chrom}-{pos}-{ref}-{alt}'
+        rsid = variant['dbsnp__rsid'] or ''
         hgvsc = variant['vep_csq__hgvsc']
         hgvsp = variant['vep_csq__hgvsp']
-        hgvsp_msg = f' ({hgvsp})' if hgvsp else ''
+        hgvsp_msg = f' p.({hgvsp[2:]})' if hgvsp else ''
         transcript = variant['vep_csq__transcript']
         refseq = variant['vep_csq__refseq']
-        transcript_msg = refseq if refseq else transcript
-        variation = f"{hgvsg} {transcript_msg}:{hgvsc}{hgvsp_msg}"
+        hgvsc_msg = f'{refseq}:{hgvsc}' if refseq else f'{transcript}:{hgvsc}'
+        variation = '\n'.join([msg for msg in [spdi, hgvsc_msg, hgvsp_msg, rsid] if msg])
         zygosity = variant['tagsampler_new__zygosity']
         zygosity_msg = zygosity2msg[zygosity][1] if zygosity else '-'
         inher = variant['vep_omim_pheno__inher']
         inher_msg = ', '.join(inher2msg[inh] for inh in inher.split(',')) if inher else '-'
-        zyg_inher_msg = f'{zygosity_msg} ({inher_msg})'
+        zyg_inher_msg = f'{zygosity_msg}\n({inher_msg})'
         af = variant['gnomad4genomes__AF']
         af_msg = float2percent(af) if af else 'н/д'
         ad = variant['tagsampler_new__ad'] or '_'
