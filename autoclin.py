@@ -6,14 +6,16 @@ from docx.enum.table import WD_TABLE_ALIGNMENT
 from datetime import date
 from math import log, floor
 from tkinter import Tk, filedialog, Button, ttk, Label
+from tkinter.messagebox import showerror, showwarning, showinfo
 import os
 import sys
 import sqlite3
 
 
 def main():
-    input_sqlite = filedialog.askopenfilename()
+    input_sqlite = filedialog.askopenfilename(title="Выберите OpenCravat SQLite файл ...", defaultextension="sqlite")
     if not input_sqlite or not str(input_sqlite).endswith('.sqlite'):
+        showwarning(f'Невалидный файл: {input_sqlite}')
         sys.exit(0)
 
     with sqlite3.connect(input_sqlite) as con:
@@ -30,17 +32,27 @@ def main():
     lst.pack()
     # progressbar = ttk.Progressbar(orient="horizontal", mode="indeterminate")
     def btn_action():
-        generate_reports(input_sqlite, lst.get(), '.')
+        generate_reports(input_sqlite, all_samples, lst.get())
         window.destroy()
     btn = Button(window, text='Сгенерировать', command=btn_action)
     btn.pack(expand=True)
     window.mainloop()
 
 
-def generate_reports(input_sqlite, target_sample, output_dir):
+def generate_reports(input_sqlite: str, all_samples: list, target_sample: str) -> None:
+    try:
+        variants_data = get_variants_data(input_sqlite)
+        for sample in all_samples:
+            doc = create_doc(variants_data, sample, all_samples, sample==target_sample)
+            output_doc = filedialog.asksaveasfilename(title='Сохранить как ...', initialfile=f'Заключение ({str(sample).split(".")[0]}).docx')
+            doc.save(output_doc)
+    except Exception as e:
+        showerror(f'Произошла ошибка: {repr(e)}')
+
+
+def get_variants_data(input_sqlite: str) -> list:
     with sqlite3.connect(input_sqlite) as con:
         cur = con.cursor()
-        all_samples = [row[0] for row in cur.execute('select distinct base__sample_id from sample;').fetchall()]
         variant_cols = cur.execute('pragma table_info(variant);').fetchall()
         variant_cols = [col[1] for col in variant_cols]
         if 'vep_csq__symbol' not in variant_cols:
@@ -53,9 +65,7 @@ def generate_reports(input_sqlite, target_sample, output_dir):
             # new SQLite
             variant_rows = cur.execute('select * from variant where base__note is not null;').fetchall()
             variants_data = [dict(zip(variant_cols, row)) for row in variant_rows]
-
-    for sample in all_samples:
-        create_doc(variants_data, sample, all_samples, sample==target_sample).save(os.path.join(output_dir, f'Заключение ({str(sample).split(".")[0]}).docx'))
+    return variants_data
 
 
 def create_doc(variants_data: list, sample: str, all_samples: list, target_sample: bool=False, dzm: bool=True) -> Document:
