@@ -85,7 +85,7 @@ def create_doc(variants_data: list, sample: str, all_samples: list, target_sampl
     CNV_table_data = []
     MT_table_data = []
     STR_table_data = []
-    SF_table_data = []
+    SF_table_data = form_snv_table_data(filter_variants(variants_data, by_note='7', by_sample=sample))
     C_table_data = form_snv_table_data(filter_variants(variants_data, by_note='8', by_sample=sample), pathogenicity_col=True)
     variants_data_for_interpretation = sum([filter_variants(variants_data, note, by_sample=sample) for note in ['1', '2', '3']], [])
 
@@ -118,7 +118,7 @@ def create_doc(variants_data: list, sample: str, all_samples: list, target_sampl
     doc.add_paragraph('Клинически значимые варианты, не связанные с основным диагнозом', style='List Bullet')
     add_table(doc, SF_table_data, SNV_table_header, italic=True)
 
-    if dzm and not target_sample:
+    if dzm:
         doc.add_paragraph('Носительство вероятно патогенных вариантов, не связанных с основным диагнозом', style='List Bullet')
         add_table(doc, C_table_data, C_table_header)
 
