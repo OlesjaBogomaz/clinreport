@@ -161,8 +161,9 @@ def create_doc(variants_data: list, sample: str, all_samples: list, target_sampl
             elif 'splice' in consequence:
                 leading_to_msg = f'который приводит к разрушению канонического сайта сплайсинга'
             omim_pheno, omim_id = variant["vep_omim_pheno__pheno"], variant["vep_omim_pheno__id"]
-            gnomad_af = variant["gnomad4genomes__AF"]
-            gnomad_af_msg = float2percent(gnomad_af) if gnomad_af else '-'
+            gnomad4aggregated = get_gnomad4aggregated(variant)
+            af_msg = float2percent(gnomad4aggregated['AF']) if gnomad4aggregated['AF'] else ''
+            ac_msg = f"{gnomad4aggregated['AC']} аллел(ей)" if gnomad4aggregated['AC'] else ''
             zygosity = variant["tagsampler_new__zygosity"]
             zygosity_msg = zygosity2msg[zygosity][2] if zygosity else ''
             dp = variant["tagsampler_new__dp"] or '_'
@@ -192,10 +193,10 @@ def create_doc(variants_data: list, sample: str, all_samples: list, target_sampl
                 omim_paragraph.add_run(f'{symbol}').italic = True
                 omim_paragraph.add_run(f' приводят к {omim_pheno} ({omim_id}).')
 
-            if gnomad_af:
-                doc.add_paragraph(f'Вариант встречается с частотой {gnomad_af_msg} в базах данных популяционных частот gnomAD')
+            if gnomad4aggregated['AN']:
+                doc.add_paragraph(f'Вариант встречается в базах данных популяционных частот gnomAD v4.1.0 с частотой {af_msg} ({ac_msg}).')
             else:
-                doc.add_paragraph('Вариант не встречается в базах данных популяционных частот gnomAD.')
+                doc.add_paragraph('Вариант не встречается в базах данных популяционных частот gnomAD v4.1.0.')
 
             comp_paragraph = doc.add_paragraph()
             if 'missense' in consequence:
@@ -318,8 +319,8 @@ def form_snv_table_data(variants_data: list, pathogenicity_col=False) -> list:
         inher = variant['vep_omim_pheno__inher']
         inher_msg = ', '.join(inher2msg[inh] for inh in inher.split(',')) if inher else '-'
         zyg_inher_msg = f'{zygosity_msg}\n({inher_msg})'
-        af = variant['gnomad4genomes__AF']
-        af_msg = float2percent(af) if af else 'н/д'
+        gnomad4aggregated = get_gnomad4aggregated(variant)
+        af_msg = float2percent(gnomad4aggregated['AF']) if gnomad4aggregated['AF'] else 'н/д'
         ad = variant['tagsampler_new__ad'] or '_'
         dp = variant['tagsampler_new__dp'] or '_'
         cover_msg = f'{ad}x/{dp}x'
@@ -448,6 +449,15 @@ def get_inher_from_omim_pheno(phenotype: str) -> str:
             inher.add(short)
     inher = ','.join(sorted(inher))
     return inher
+
+
+def get_gnomad4aggregated(variant_data: dict) -> dict:
+    gnomad4aggregated = {'AN': None, 'AC': None, 'AF': None}
+    gnomad4aggregated['AN'] = sum([value for value in [variant_data['gnomad4genomes__AN'], variant_data['gnomad4exomes__AN']] if value])
+    if gnomad4aggregated['AN']:
+        gnomad4aggregated['AC'] = sum([value for value in [variant_data['gnomad4genomes__AC'], variant_data['gnomad4exomes__AC']] if value])
+        gnomad4aggregated['AF'] = gnomad4aggregated['AC'] / gnomad4aggregated['AN']
+    return gnomad4aggregated
 
 
 note2clinsig = {
