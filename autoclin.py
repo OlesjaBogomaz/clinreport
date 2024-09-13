@@ -57,7 +57,7 @@ def get_variants_data(input_sqlite: str) -> list:
         variant_cols = [col[1] for col in variant_cols]
         if 'vep_csq__symbol' not in variant_cols:
             # legacy SQLite
-            variant_rows = cur.execute('select * from variant where base__note in (1,2,3);').fetchall()
+            variant_rows = cur.execute('select * from variant where base__note in (1,2,3,4,5,6,7,8);').fetchall()
             variants_data = [dict(zip(variant_cols, row)) for row in variant_rows]
             for varaint_data in variants_data:
                 varaint_data.update(annotate_legacy(varaint_data))
