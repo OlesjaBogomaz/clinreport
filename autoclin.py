@@ -344,14 +344,14 @@ def form_snv_table_data(variants_data: list, pathogenicity_col=False, ru_annotat
         cover_msg = f'{ad}x/{dp}x'
         if pathogenicity_col:
             if ru_annotation:
-                omim_pheno = ru_annotations.get('secondary', {}).get('Disease/Phentyope', {}).get(symbol, omim_pheno)
-                inher_msg = ru_annotations.get('secondary', {}).get('Disease/Phentyope', {}).get(symbol, inher_msg)
+                omim_pheno = ru_annotations.get('omim', {}).get('Ассоциированное заболевание', {}).get(symbol, omim_pheno)
             clinvar_sig = variant["clinvar_new__sig"]
             clinsig_msg = clinsig2msg.get(clinvar_sig, '-')
             snv_table_data.append((symbol, omim_pheno, variation, f'{zygosity_msg}\n({inher_msg})', clinsig_msg, af_msg, cover_msg))
         else:
             if ru_annotation:
-                omim_pheno = ru_annotations.get('omim', {}).get('Ассоциированное заболевание', {}).get(symbol, omim_pheno)
+                omim_pheno = ru_annotations.get('secondary', {}).get('Disease/Phentyope', {}).get(symbol, omim_pheno)
+                inher_msg = ru_annotations.get('secondary', {}).get('Disease/Phentyope', {}).get(symbol, inher_msg)
             snv_table_data.append((symbol, omim_pheno, variation, f'{zygosity_msg}\n({inher_msg})', af_msg, cover_msg))
     return snv_table_data
 
