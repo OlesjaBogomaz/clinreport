@@ -58,7 +58,7 @@ def generate_reports(input_sqlite: str, all_samples: list, target_sample: str) -
 
 
 def get_ru_annotations() -> dict:
-    url = 'https://docs.google.com/spreadsheets/d/1Zj_Gw-TolcoKljqfk4eCrQ1hyhlZDs44UOZbFTVTfes1'
+    url = 'https://docs.google.com/spreadsheets/d/1Zj_Gw-TolcoKljqfk4eCrQ1hyhlZDs44UOZbFTVTfes'
     try:
         return {
             'omim': pd.read_csv(f'{url}/export?format=csv&gid=0', index_col=0).to_dict(),
