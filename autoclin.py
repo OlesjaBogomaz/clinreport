@@ -351,7 +351,7 @@ def form_snv_table_data(variants_data: list, pathogenicity_col=False, ru_annotat
         else:
             if ru_annotation:
                 omim_pheno = ru_annotations.get('secondary', {}).get('Disease/Phentyope', {}).get(symbol, omim_pheno)
-                inher_msg = ru_annotations.get('secondary', {}).get('Disease/Phentyope', {}).get(symbol, inher_msg)
+                inher_msg = ru_annotations.get('secondary', {}).get('Inheritance', {}).get(symbol, inher_msg)
             snv_table_data.append((symbol, omim_pheno, variation, f'{zygosity_msg}\n({inher_msg})', af_msg, cover_msg))
     return snv_table_data
 
