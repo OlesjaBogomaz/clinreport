@@ -10,12 +10,16 @@ from tkinter.messagebox import showerror, showwarning, showinfo
 import os
 import sys
 import sqlite3
+import traceback
+import pandas as pd
 
 
 def main():
     input_sqlite = filedialog.askopenfilename(title="Выберите OpenCravat SQLite файл ...", defaultextension="sqlite")
-    if not input_sqlite or not str(input_sqlite).endswith('.sqlite'):
-        showwarning(f'Невалидный файл: {input_sqlite}')
+    if not input_sqlite:
+        sys.exit(0)
+    if not str(input_sqlite).endswith('.sqlite'):
+        showwarning(title='Невалидный файл', message=input_sqlite)
         sys.exit(0)
 
     with sqlite3.connect(input_sqlite) as con:
@@ -41,13 +45,27 @@ def main():
 
 def generate_reports(input_sqlite: str, all_samples: list, target_sample: str) -> None:
     try:
+        global ru_annotations
+        ru_annotations = get_ru_annotations()
         variants_data = get_variants_data(input_sqlite)
         for sample in all_samples:
             doc = create_doc(variants_data, sample, all_samples, sample==target_sample)
             output_doc = filedialog.asksaveasfilename(title='Сохранить как ...', initialfile=f'Заключение ({str(sample).split(".")[0]}).docx')
-            doc.save(output_doc)
+            if output_doc:
+                doc.save(output_doc)
     except Exception as e:
-        showerror(f'Произошла ошибка: {repr(e)}')
+        showerror(title=f'Произошла ошибка: {e}', message=traceback.format_exc())
+
+
+def get_ru_annotations() -> dict:
+    url = 'https://docs.google.com/spreadsheets/d/1Zj_Gw-TolcoKljqfk4eCrQ1hyhlZDs44UOZbFTVTfes1'
+    try:
+        return {
+            'omim': pd.read_csv(f'{url}/export?format=csv&gid=0', index_col=0).to_dict(),
+            'secondary': pd.read_csv(f'{url}/export?format=csv&gid=706494431', index_col=0).to_dict()
+        }
+    except:
+        return {}
 
 
 def get_variants_data(input_sqlite: str) -> list:
@@ -79,14 +97,15 @@ def create_doc(variants_data: list, sample: str, all_samples: list, target_sampl
         '1.    число прочтений с качеством Q20: не менее 90% от числа прочтений, полученных в результате секвенирования',
         '2.    число прочтений с качеством Q30: не менее 80% от числа прочтений, полученных в результате секвенирования'
     )]
-    SNV_P_table_data = form_snv_table_data(filter_variants(variants_data, by_note='1', by_sample=sample))
-    SNV_LP_table_data = form_snv_table_data(filter_variants(variants_data, by_note='2', by_sample=sample))
-    SNV_VUS_table_data = form_snv_table_data(filter_variants(variants_data, by_note='3', by_sample=sample))
-    CNV_table_data = []
-    MT_table_data = []
-    STR_table_data = []
-    SF_table_data = form_snv_table_data(filter_variants(variants_data, by_note='7', by_sample=sample))
-    C_table_data = form_snv_table_data(filter_variants(variants_data, by_note='8', by_sample=sample), pathogenicity_col=True)
+    SNV_P_table_data = form_snv_table_data(filter_variants(variants_data, by_note='1', by_sample=sample)) #1
+    SNV_LP_table_data = form_snv_table_data(filter_variants(variants_data, by_note='2', by_sample=sample)) #2
+    SNV_VUS_table_data = form_snv_table_data(filter_variants(variants_data, by_note='3', by_sample=sample)) #3
+    CNV_table_data = [] #4
+    MT_table_data = [] #5
+    STR_table_data = [] #6
+    SF_table_data = form_snv_table_data(filter_variants(variants_data, by_note='7', by_sample=sample), ru_annotation=True) #7
+    C_table_data = form_snv_table_data(filter_variants(variants_data, by_note='8', by_sample=sample), pathogenicity_col=True, ru_annotation=True) #8
+
     variants_data_for_interpretation = sum([filter_variants(variants_data, note, by_sample=sample) for note in ['1', '2', '3']], [])
 
     doc = Document()
@@ -296,11 +315,10 @@ def filter_variants(variants_data: list, by_note: str, by_sample=None) -> list:
     return variants_data_filtered
 
 
-def form_snv_table_data(variants_data: list, pathogenicity_col=False) -> list:
+def form_snv_table_data(variants_data: list, pathogenicity_col=False, ru_annotation=False) -> list:
     snv_table_data = []
     for variant in variants_data:
         symbol = variant['vep_csq__symbol']
-        omim_pheno = variant['vep_omim_pheno__pheno']
         chrom = variant['base__chrom']
         pos = variant['extra_vcf_info__pos']
         ref = variant['extra_vcf_info__ref']
@@ -316,20 +334,25 @@ def form_snv_table_data(variants_data: list, pathogenicity_col=False) -> list:
         variation = '\n'.join([msg for msg in [spdi, transcript_msg, hgvsc, hgvsp_msg, rsid] if msg])
         zygosity = variant['tagsampler_new__zygosity']
         zygosity_msg = zygosity2msg[zygosity][1] if zygosity else '-'
+        omim_pheno = variant['vep_omim_pheno__pheno']
         inher = variant['vep_omim_pheno__inher']
         inher_msg = ', '.join(inher2msg[inh] for inh in inher.split(',')) if inher else '-'
-        zyg_inher_msg = f'{zygosity_msg}\n({inher_msg})'
         gnomad4aggregated = get_gnomad4aggregated(variant)
         af_msg = float2percent(gnomad4aggregated['AF']) if gnomad4aggregated['AF'] else 'н/д'
         ad = variant['tagsampler_new__ad'] or '_'
         dp = variant['tagsampler_new__dp'] or '_'
         cover_msg = f'{ad}x/{dp}x'
         if pathogenicity_col:
+            if ru_annotation:
+                omim_pheno = ru_annotations.get('secondary', {}).get('Disease/Phentyope', {}).get(symbol, omim_pheno)
+                inher_msg = ru_annotations.get('secondary', {}).get('Disease/Phentyope', {}).get(symbol, inher_msg)
             clinvar_sig = variant["clinvar_new__sig"]
             clinsig_msg = clinsig2msg.get(clinvar_sig, '-')
-            snv_table_data.append((symbol, omim_pheno, variation, zyg_inher_msg, clinsig_msg, af_msg, cover_msg))
+            snv_table_data.append((symbol, omim_pheno, variation, f'{zygosity_msg}\n({inher_msg})', clinsig_msg, af_msg, cover_msg))
         else:
-            snv_table_data.append((symbol, omim_pheno, variation, zyg_inher_msg, af_msg, cover_msg))
+            if ru_annotation:
+                omim_pheno = ru_annotations.get('omim', {}).get('Ассоциированное заболевание', {}).get(symbol, omim_pheno)
+            snv_table_data.append((symbol, omim_pheno, variation, f'{zygosity_msg}\n({inher_msg})', af_msg, cover_msg))
     return snv_table_data
 
 
