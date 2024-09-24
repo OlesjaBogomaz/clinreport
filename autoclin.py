@@ -158,7 +158,7 @@ def create_doc(variants_data: list, sample: str, all_samples: list, target_sampl
             hgvsc = variant["vep_csq__hgvsc"]
             hgvsc_msg = f'{refseq}:{hgvsc}' if refseq else f'{transcript}:{hgvsc}'
             hgvsp = variant["vep_csq__hgvsp"]
-            hgvsp_msg = f'p.({hgvsp[2:].replace('%3D', '=')})' if hgvsp else ''
+            hgvsp_msg = f"p.({hgvsp[2:].replace('%3D', '=')})" if hgvsp else ''
             rsid = variant['dbsnp__rsid']
             variation_msg = ', '.join([msg for msg in [hgvsg, hgvsc_msg, rsid] if msg])
             consequence = variant["vep_csq__consequence"]
@@ -327,7 +327,7 @@ def form_snv_table_data(variants_data: list, pathogenicity_col=False, ru_annotat
         rsid = variant['dbsnp__rsid'] or ''
         hgvsc = variant['vep_csq__hgvsc']
         hgvsp = variant['vep_csq__hgvsp']
-        hgvsp_msg = f'p.({hgvsp[2:].replace('%3D', '=')})' if hgvsp else ''
+        hgvsp_msg = f"p.({hgvsp[2:].replace('%3D', '=')})" if hgvsp else ''
         transcript = variant['vep_csq__transcript']
         refseq = variant['vep_csq__refseq']
         transcript_msg = f'{refseq}:' if refseq else f'{transcript}:'
