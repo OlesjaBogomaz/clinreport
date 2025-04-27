@@ -170,9 +170,9 @@ def create_doc(variants_data: list, sample: str, all_samples: list, target_sampl
             if 'missense' in consequence:
                 leading_to_msg = f'который приводит к аминокислотной замене {hgvsp_msg}'
             elif 'synon' in consequence:
-                leading_to_msg = f'который приводит / может приводить к абберантному сплайсингу {hgvsp_msg}'
+                leading_to_msg = f'который приводит / может приводить к аберрантному сплайсингу {hgvsp_msg}'
             elif 'intron' in consequence:
-                leading_to_msg = f'который приводит / может приводить к абберантному сплайсингу'
+                leading_to_msg = f'который приводит / может приводить к аберрантному сплайсингу'
             elif 'shift' in consequence:
                 leading_to_msg = f'который приводит к сдвигу рамки считывания и образованию преждевременного стоп-кодона {hgvsp_msg}'
             elif 'stop' in consequence:
@@ -213,9 +213,9 @@ def create_doc(variants_data: list, sample: str, all_samples: list, target_sampl
                 omim_paragraph.add_run(f' приводят к {omim_pheno} ({omim_id}).')
 
             if gnomad4aggregated['AN']:
-                doc.add_paragraph(f'Вариант встречается в базах данных популяционных частот gnomAD v4.1.0 с частотой {af_msg} ({ac_msg}).')
+                doc.add_paragraph(f'Вариант встречается в базе данных популяционных частот gnomAD v4.1.0 с частотой {af_msg} ({ac_msg}).')
             else:
-                doc.add_paragraph('Вариант не встречается в базах данных популяционных частот gnomAD v4.1.0.')
+                doc.add_paragraph('Вариант не встречается в базе данных популяционных частот gnomAD v4.1.0.')
 
             comp_paragraph = doc.add_paragraph()
             if 'missense' in consequence:
