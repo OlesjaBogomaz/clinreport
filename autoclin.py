@@ -161,6 +161,7 @@ def create_doc(variants_data: list, sample: str, all_samples: list, target_sampl
             hgvsp_msg = f"p.({hgvsp[2:].replace('%3D', '=')})" if hgvsp else ''
             rsid = variant['dbsnp__rsid']
             variation_msg = ', '.join([msg for msg in [hgvsg, hgvsc_msg, rsid] if msg])
+            indel_size = len(variant['base__alt_base'].replace('-', '')) - len(variant['base__ref_base'].replace('-', ''))
             consequence = variant["vep_csq__consequence"]
             exon, intron = variant["vep_csq__exon"], variant["vep_csq__intron"]
             if exon:
@@ -174,7 +175,8 @@ def create_doc(variants_data: list, sample: str, all_samples: list, target_sampl
             elif 'intron' in consequence:
                 leading_to_msg = f'который приводит / может приводить к аберрантному сплайсингу'
             elif 'shift' in consequence:
-                leading_to_msg = f'который приводит к сдвигу рамки считывания и образованию преждевременного стоп-кодона {hgvsp_msg}'
+                indel_type = 'вставке' if indel_size > 0 else 'удалению'
+                leading_to_msg = f'который приводит к {indel_type} {abs(indel_size)} нуклеотидов, сдвигу рамки считывания и образованию преждевременного стоп-кодона {hgvsp_msg}'
             elif 'stop' in consequence:
                 leading_to_msg = f'который приводит к образованию преждевременного стоп-кодона {hgvsp_msg}'
             elif 'splice' in consequence:
