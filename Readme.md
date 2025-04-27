@@ -43,5 +43,10 @@ Or you can run `clinreport.py` with CLI interface:
 
 ### Requirements
 
-python3, python-docx
+python3, python-docx, pyinstaller
 
+`pip install -r requirements.txt`
+
+### How to crate Windows/MacOS application
+
+`pyinstaller --onefile --windowed --name <app-name> app.py`
