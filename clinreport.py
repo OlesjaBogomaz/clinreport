@@ -16,8 +16,7 @@ class ClinReport:
         self.cravat_sqlite = cravat_sqlite
         self.all_samples = self.get_all_samples()
         self.target_sample = target_sample or self.all_samples[0]
-        # self.ru_annotations = self.get_ru_annotations()
-        self.ru_annotations = {}
+        self.ru_annotations = self.get_ru_annotations()
 
 
     def get_all_samples(self) -> list:
@@ -27,15 +26,15 @@ class ClinReport:
             return all_samples
 
 
-    # def get_ru_annotations(self) -> dict:
-    #     url = 'https://docs.google.com/spreadsheets/d/1Zj_Gw-TolcoKljqfk4eCrQ1hyhlZDs44UOZbFTVTfes'
-    #     try:
-    #         return {
-    #             'omim': pd.read_csv(f'{url}/export?format=csv&gid=0', index_col=0).to_dict(),
-    #             'secondary': pd.read_csv(f'{url}/export?format=csv&gid=706494431', index_col=0).to_dict()
-    #         }
-    #     except:
-    #         return {}
+    def get_ru_annotations(self) -> dict:
+        url = 'https://docs.google.com/spreadsheets/d/1Zj_Gw-TolcoKljqfk4eCrQ1hyhlZDs44UOZbFTVTfes'
+        try:
+            return {
+                'omim': pd.read_csv(f'{url}/export?format=csv&gid=0', index_col=0).to_dict(),
+                'secondary': pd.read_csv(f'{url}/export?format=csv&gid=706494431', index_col=0).to_dict()
+            }
+        except:
+            return {}
 
 
     def generate_reports(self) -> dict:
