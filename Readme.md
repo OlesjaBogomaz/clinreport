@@ -1,0 +1,52 @@
+# AutoClin
+
+Generate clinical report from GenLab OpenCRAVAT SQLite
+
+
+## Usage
+
+0. Mark variants to reflect in the report
+
+- Open SQLite in OpenCRAVAT viewer
+- mark variants of interest in `Note` field with the corresponding number:
+    `1`: патогенный
+    `2`: вероятно патогенный
+    `3`: вариант с неизвестной клинической значимостью
+
+SQLite with changes (with marked variants) is saved in the `jobs` folder of OpenCRAVAT
+
+1. Run AutoClin
+
+Run application and follow app-instructions:
+
+    - chose SQLite with marked variants
+    - select main sample for duo/trio
+    - click `generate`
+    - chose where to save document
+
+
+Or you can run `clinreport.py` with CLI interface:
+
+    ```
+    usage: clinreport.py [-h] [-t TARGET_SAMPLE] sqlite
+
+    sqlite                Path to OpenCRAVAT SQLite
+
+    options:
+    -h, --help            show this help message and exit
+    -t, --target-sample TARGET_SAMPLE
+                            Main sample in duo/trio
+    ```
+
+
+## Setup
+
+### Requirements
+
+python3, python-docx, pyinstaller
+
+`pip install -r requirements.txt`
+
+### How to crate Windows/MacOS application
+
+`pyinstaller --onefile --windowed --name <app-name> app.py`
