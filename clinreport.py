@@ -12,11 +12,13 @@ import sqlite3
 
 class ClinReport:
 
-    def __init__(self, cravat_sqlite: str, target_sample: str | None = None):
+    def __init__(self, cravat_sqlite: str, target_sample: str | None = None, clinician: str | None = None):
         self.cravat_sqlite = cravat_sqlite
         self.all_samples = self.get_all_samples()
         self.target_sample = target_sample or self.all_samples[0]
+        self.clinician = clinician or ''
         self.ru_annotations = self.get_ru_annotations()
+        self.data = None
 
 
     def get_all_samples(self) -> list:
@@ -39,17 +41,47 @@ class ClinReport:
 
     def generate_reports(self) -> dict:
         """
-        Main method
+        Main CLI method
         """
         reports = {}
-        variants_data = self.get_variants_data()
+        self.get_data()
         for sample in self.all_samples:
-            doc = self.create_doc(variants_data, sample, self.all_samples, sample==self.target_sample)
+            doc = self.create_doc(sample)
             reports[sample] = doc
         return reports
 
 
+    def get_data(self) -> None:
+        """
+        Parse, filter and process SQLite variants for all samples
+        """
+        variants_data = self.get_variants_data()
+        self.data = {
+            sample: {
+                'Номер образца': str(sample).split(".")[0],
+                'Пол пациента': '_',
+                'Возраст пациента': '_',
+                'Предварительный диагноз': '_',
+                'Метод исследования': 'полногеномное секвенирование (Whole Genome Sequencing)',
+                'Средняя глубина прочтения генома после секвенирования': '_x',
+                'Количество прочитанных нуклеотидов': 'не менее 90 млрд',
+                'Тип прочтения': 'парно-концевое',
+                'Длина прочтения': '150',
+                'Качество выходных данных секвенирования': (
+                    '1.    число прочтений с качеством Q20: не менее 90% от числа прочтений, полученных в результате секвенирования'
+                    '\n\n'
+                    '2.    число прочтений с качеством Q30: не менее 80% от числа прочтений, полученных в результате секвенирования'
+                ),
+                'variants_data': self.process_variants_data(self.filter_variants(variants_data, by_sample=sample))
+            }
+                for sample in self.all_samples
+        }
+
+
     def get_variants_data(self) -> list:
+        """
+        Fetch variants data from SQLite
+        """
         with sqlite3.connect(self.cravat_sqlite) as con:
             cur = con.cursor()
             variant_cols = cur.execute('pragma table_info(variant);').fetchall()
@@ -67,27 +99,90 @@ class ClinReport:
         return variants_data
 
 
-    def create_doc(self, variants_data: list, sample: str, all_samples: list, target_sample: bool=False, dzm: bool=True) -> Document:
-        case_table_data = [(str(sample).split('.')[0], '_', '_', '_')]
-        tech_table_data = [(
-            'полногеномное секвенирование (Whole Genome Sequencing)',
-            '_x',
-            'не менее 90 млрд',
-            'парно-концевое',
-            '150',
-            '1.    число прочтений с качеством Q20: не менее 90% от числа прочтений, полученных в результате секвенирования',
-            '2.    число прочтений с качеством Q30: не менее 80% от числа прочтений, полученных в результате секвенирования'
-        )]
-        SNV_P_table_data = self.form_snv_table_data(self.filter_variants(variants_data, by_note='1', by_sample=sample)) #1
-        SNV_LP_table_data = self.form_snv_table_data(self.filter_variants(variants_data, by_note='2', by_sample=sample)) #2
-        SNV_VUS_table_data = self.form_snv_table_data(self.filter_variants(variants_data, by_note='3', by_sample=sample)) #3
-        CNV_table_data = [] #4
-        MT_table_data = [] #5
-        STR_table_data = [] #6
-        SF_table_data = self.form_snv_table_data(self.filter_variants(variants_data, by_note='7', by_sample=sample), ru_annotation=True) #7
-        C_table_data = self.form_snv_table_data(self.filter_variants(variants_data, by_note='8', by_sample=sample), pathogenicity_col=True, ru_annotation=True) #8
+    def process_variants_data(self, variants_data: list, ru_annotation: bool=True) -> list:
+        """
+        Aggregate variants data
+        """
+        return [self.process_variant_data(variant_data, ru_annotation=ru_annotation) for variant_data in variants_data]        
 
-        variants_data_for_interpretation = sum([self.filter_variants(variants_data, note, by_sample=sample) for note in ['1', '2', '3']], [])
+
+    def process_variant_data(self, variant_data: dict, ru_annotation=False) -> dict:
+        """
+        Aggregate variant data
+        """
+        variant_data = variant_data.copy()
+        note = variant_data['base__note']
+        symbol = variant_data['vep_csq__symbol']
+        chrom = variant_data['base__chrom']
+        pos = variant_data['extra_vcf_info__pos']
+        ref = variant_data['extra_vcf_info__ref']
+        alt = variant_data['extra_vcf_info__alt']
+        spdi = f'{chrom}-{pos}-{ref}-{alt}'
+        rsid = variant_data['dbsnp__rsid'] or ''
+        hgvsc = variant_data['vep_csq__hgvsc']
+        hgvsp = variant_data['vep_csq__hgvsp']
+        hgvsp_msg = f"p.({hgvsp[2:].replace('%3D', '=')})" if hgvsp else ''
+        transcript = variant_data['vep_csq__transcript']
+        refseq = variant_data['vep_csq__refseq']
+        transcript_msg = f'{refseq}:' if refseq else f'{transcript}:'
+        variation = '\n'.join([msg for msg in [spdi, transcript_msg, hgvsc, hgvsp_msg, rsid] if msg])
+        zygosity = variant_data['tagsampler_new__zygosity']
+        zygosity_msg = self.zygosity2msg[zygosity][1] if zygosity else '-'
+        omim_pheno = variant_data['vep_omim_pheno__pheno']
+        inher = variant_data['vep_omim_pheno__inher']
+        inher_msg = ', '.join(self.inher2msg[inh] for inh in inher.split(',')) if inher else '-'
+        gnomad4aggregated = self.get_gnomad4aggregated(variant_data)
+        af_msg = self.float2percent(gnomad4aggregated['AF']) if gnomad4aggregated['AF'] else 'н/д'
+        ad = variant_data['tagsampler_new__ad'] or '_'
+        dp = variant_data['tagsampler_new__dp'] or '_'
+        cover_msg = f'{ad}x/{dp}x'
+        if note == '8':
+            # "carrier" variants
+            if ru_annotation:
+                omim_pheno = self.ru_annotations.get('omim', {}).get('Ассоциированное заболевание', {}).get(symbol, omim_pheno)
+            clinvar_sig = variant_data["clinvar_new__sig"]
+            clinsig_msg = self.clinsig2msg.get(clinvar_sig, '-')
+        else:
+            clinsig_msg = self.note2clinsig[note].capitalize()
+            if ru_annotation:
+                omim_pheno = self.ru_annotations.get('secondary', {}).get('Disease/Phentyope', {}).get(symbol, omim_pheno)
+                inher_msg = self.ru_annotations.get('secondary', {}).get('Inheritance', {}).get(symbol, inher_msg)
+        zygosity_inher_msg = f'{zygosity_msg}\n({inher_msg})'
+        clin_type = self.note2type.get(note)
+        variant_data.update({
+            "Ген": symbol,
+            "Ассоциированное заболевание (OMIM)": omim_pheno,
+            "Изменение ДНК (HG38) (Изменение белка)": variation,
+            "Зиготность (Тип наследования)": zygosity_inher_msg,
+            "Частота*": af_msg,
+            "Кол-во прочтений (АЛТ/ОБЩ)": cover_msg,
+            "Патогенность": clinsig_msg,
+            "Тип": clin_type
+        })
+        return variant_data
+
+
+    def create_doc(self, sample: str, dzm: bool=True) -> Document:
+        sample_data = self.data[sample]
+        sample_variants_data = sample_data['variants_data']
+        case_table_data = [(sample_data[key] for key in ['Номер образца', 'Пол пациента', 'Возраст пациента', 'Предварительный диагноз'])]
+        tech_table_data = [(sample_data[key] for key in [
+            'Метод исследования',
+            'Средняя глубина прочтения генома после секвенирования',
+            'Количество прочитанных нуклеотидов',
+            'Тип прочтения',
+            'Длина прочтения',
+            'Качество выходных данных секвенирования'
+        ])]
+        SNV_P_table_data = self.form_snv_table_data(self.filter_variants(sample_variants_data, by_note='1')) #1 causative P
+        SNV_LP_table_data = self.form_snv_table_data(self.filter_variants(sample_variants_data, by_note='2')) #2 causative LP
+        SNV_VUS_table_data = self.form_snv_table_data(self.filter_variants(sample_variants_data, by_note='3')) #3 causative VUS
+        CNV_table_data = [] #4 CNV
+        MT_table_data = [] #5 MT
+        STR_table_data = [] #6 STR
+        SF_table_data = self.form_snv_table_data(self.filter_variants(sample_variants_data, by_note='7')) #7 secondary findings
+        C_table_data = self.form_snv_table_data(self.filter_variants(sample_variants_data, by_note='8'), pathogenicity_col=True) #8 carrier type variants
+        causative_variants_data = sum([self.filter_variants(sample_variants_data, note) for note in ['1', '2', '3']], [])
 
         doc = Document()
         doc.add_heading('ОТЧЕТ\n', level=1).alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -128,10 +223,10 @@ class ClinReport:
 
         doc.add_paragraph('Был проведен поиск вариантов, ассоциированных с направительным диагнозом у пробанда и прочими наследственными заболеваниями со сходными фенотипическими проявлениями.')
 
-        if not variants_data_for_interpretation:
+        if not causative_variants_data:
             doc.add_paragraph('\nЗначимых изменений, соответствующих критериям поиска, не обнаружено.')
         else:
-            for variant in variants_data_for_interpretation:
+            for variant in causative_variants_data:
                 symbol = variant["vep_csq__symbol"]
                 transcript = variant['vep_csq__transcript']
                 refseq = variant['vep_csq__refseq']
@@ -245,8 +340,8 @@ class ClinReport:
                     clinvar_alternative_sig_subs_msgs = self.clinvar_sig_subs2msgs(clinvar_alternative[4]) or [clinvar_alternative[2]]
                     doc.add_paragraph(f'Вариант с другой аминокислотной заменой {clinvar_alternative[1]} в той же позиции аннотирован {", ".join(clinvar_alternative_sig_subs_msgs)} [{source_idx}].')
 
-                if target_sample:
-                    nontarget_samples = samples.copy()
+                if self.target_sample:
+                    nontarget_samples = self.all_samples.copy()
                     nontarget_samples.remove(sample)
                     if nontarget_samples:
                         nontarget_samples = [str(sample).split('.')[0] for sample in nontarget_samples]
@@ -274,13 +369,15 @@ class ClinReport:
         doc.add_paragraph('\n')
 
         doc.add_paragraph(f'Дата выдачи отчета: {date.today()}')
-        doc.add_paragraph('Клинический биоинформатик: ')
+        doc.add_paragraph(f'Клинический биоинформатик: {self.clinician}')
 
         return doc
 
 
-    def filter_variants(self, variants_data: list, by_note: str, by_sample=None) -> list:
-        variants_data = [variant for variant in variants_data if variant['base__note'] == by_note]
+    def filter_variants(self, variants_data: list, by_note: str | None = None, by_sample: str | None = None) -> list:
+        variants_data = variants_data.copy()
+        if by_note:
+            variants_data = [variant for variant in variants_data if variant['base__note'] == by_note]
         if by_sample:
             variants_data_filtered = []
             for variant in variants_data:
@@ -298,44 +395,9 @@ class ClinReport:
         return variants_data_filtered
 
 
-    def form_snv_table_data(self, variants_data: list, pathogenicity_col=False, ru_annotation=False) -> list:
-        snv_table_data = []
-        for variant in variants_data:
-            symbol = variant['vep_csq__symbol']
-            chrom = variant['base__chrom']
-            pos = variant['extra_vcf_info__pos']
-            ref = variant['extra_vcf_info__ref']
-            alt = variant['extra_vcf_info__alt']
-            spdi = f'{chrom}-{pos}-{ref}-{alt}'
-            rsid = variant['dbsnp__rsid'] or ''
-            hgvsc = variant['vep_csq__hgvsc']
-            hgvsp = variant['vep_csq__hgvsp']
-            hgvsp_msg = f"p.({hgvsp[2:].replace('%3D', '=')})" if hgvsp else ''
-            transcript = variant['vep_csq__transcript']
-            refseq = variant['vep_csq__refseq']
-            transcript_msg = f'{refseq}:' if refseq else f'{transcript}:'
-            variation = '\n'.join([msg for msg in [spdi, transcript_msg, hgvsc, hgvsp_msg, rsid] if msg])
-            zygosity = variant['tagsampler_new__zygosity']
-            zygosity_msg = self.zygosity2msg[zygosity][1] if zygosity else '-'
-            omim_pheno = variant['vep_omim_pheno__pheno']
-            inher = variant['vep_omim_pheno__inher']
-            inher_msg = ', '.join(self.inher2msg[inh] for inh in inher.split(',')) if inher else '-'
-            gnomad4aggregated = self.get_gnomad4aggregated(variant)
-            af_msg = self.float2percent(gnomad4aggregated['AF']) if gnomad4aggregated['AF'] else 'н/д'
-            ad = variant['tagsampler_new__ad'] or '_'
-            dp = variant['tagsampler_new__dp'] or '_'
-            cover_msg = f'{ad}x/{dp}x'
-            if pathogenicity_col:
-                if ru_annotation:
-                    omim_pheno = self.ru_annotations.get('omim', {}).get('Ассоциированное заболевание', {}).get(symbol, omim_pheno)
-                clinvar_sig = variant["clinvar_new__sig"]
-                clinsig_msg = self.clinsig2msg.get(clinvar_sig, '-')
-                snv_table_data.append((symbol, omim_pheno, variation, f'{zygosity_msg}\n({inher_msg})', clinsig_msg, af_msg, cover_msg))
-            else:
-                if ru_annotation:
-                    omim_pheno = self.ru_annotations.get('secondary', {}).get('Disease/Phentyope', {}).get(symbol, omim_pheno)
-                    inher_msg = self.ru_annotations.get('secondary', {}).get('Inheritance', {}).get(symbol, inher_msg)
-                snv_table_data.append((symbol, omim_pheno, variation, f'{zygosity_msg}\n({inher_msg})', af_msg, cover_msg))
+    def form_snv_table_data(self, variants_data: list, pathogenicity_col=False) -> list:
+        keys = self.C_table_header if pathogenicity_col else self.SNV_table_header
+        snv_table_data = [tuple(variant_data[key] for key in keys) for variant_data in variants_data]
         return snv_table_data
 
 
@@ -471,6 +533,13 @@ class ClinReport:
         '2': 'вероятно патогенный',
         '3': 'вариант с неизвестной клинической значимостью'
     }
+    note2type = {
+        '1': 'Каузативный',
+        '2': 'Каузативный',
+        '3': 'Каузативный',
+        '7': 'Не связан с основным диагнозом',
+        '8': 'Носительство'
+    }
     clinsig2msg = {
         'Pathogenic': 'патогенный',
         'Pathogenic/Likely_pathogenic': 'патогенный / вероятно патогенный',
@@ -502,8 +571,7 @@ class ClinReport:
         'Количество прочитанных нуклеотидов',
         'Тип прочтения',
         'Длина прочтения',
-        'Качество выходных данных секвенирования',
-        ''
+        'Качество выходных данных секвенирования'
     )
     SNV_table_header = (
         'Ген',

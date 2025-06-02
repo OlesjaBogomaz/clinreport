@@ -12,10 +12,14 @@ Generate clinical report from GenLab OpenCRAVAT SQLite
     `1`: патогенный
     `2`: вероятно патогенный
     `3`: вариант с неизвестной клинической значимостью
+    `7`: вариант, не связанный с основным диагнозом
+    `8`: носительство
+
 
 SQLite with changes (with marked variants) is saved in the `jobs` folder of OpenCRAVAT
 
-1. Run AutoClin
+
+1. Run ClinReport
 
 Run application and follow app-instructions:
 
@@ -43,7 +47,7 @@ Or you can run `clinreport.py` with CLI interface:
 
 ### Requirements
 
-python3, python-docx, pyinstaller
+python3
 
 `pip install -r requirements.txt`
 
