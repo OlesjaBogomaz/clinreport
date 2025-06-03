@@ -1,4 +1,4 @@
-# AutoClin
+# ClinReport
 
 Generate clinical report from GenLab OpenCRAVAT SQLite
 
