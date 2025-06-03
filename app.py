@@ -111,7 +111,7 @@ class MainWindow(tk.Tk):
     def process_file(self, filepath, target_sample):
         """Обрабатывает файл в зависимости от выбранного типа."""
         try:
-            self.clinreport = ClinReport(filepath, clinician=self.config['clinitian'], ru_annotations=self.ru_annotations)
+            self.clinreport = ClinReport(filepath, clinician=self.config['clinician'], ru_annotations=self.ru_annotations)
             self.clinreport.target_sample = target_sample
             self.clinreport.get_data()
             for sample in self.clinreport.all_samples:
