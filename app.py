@@ -11,9 +11,11 @@ import traceback
 import json
 import shutil
 from pathlib import Path
+import pandas as pd
 
-from utils import load_config
+from utils import load_config, get_ru_annotations
 from clinreport import ClinReport
+from database import Database
 
 
 class MainWindow(tk.Tk):
@@ -34,6 +36,8 @@ class MainWindow(tk.Tk):
         self.config = load_config(self.config_path)
 
         self.clinreport = None
+        self.ru_annotations = self.setup_ru_annotations()
+        self.setup_database()
 
 
     def get_config_path(self, config_fname):
@@ -73,6 +77,21 @@ class MainWindow(tk.Tk):
         return os.path.join(base_path, config_fname)
 
 
+    def setup_database(self):
+        self.database = None
+        try:
+            self.database = Database(db_creds=self.config)
+        except Exception as e:
+            messagebox.showwarning("Проблема с подключением к БД", f"{traceback.format_exc()}")
+
+
+    def setup_ru_annotations(self):
+        try:
+            return get_ru_annotations()
+        except Exception as e:
+            messagebox.showwarning('Летмиспикфромахарт', f"Проблема с получением аннотаций на русском: {repr(e)}")
+        
+
     def select_file(self):
         """Открывает диалоговое окно выбора файла."""
         filepath = filedialog.askopenfilename(filetypes=[("SQLite files", "*.sqlite"), ("All files", "*.*")])
@@ -93,7 +112,7 @@ class MainWindow(tk.Tk):
     def process_file(self, filepath, target_sample):
         """Обрабатывает файл в зависимости от выбранного типа."""
         try:
-            self.clinreport = ClinReport(filepath, clinician=self.config['Клинический биоинформатик'])
+            self.clinreport = ClinReport(filepath, clinician=self.config['Клинический биоинформатик'], ru_annotations=self.ru_annotations)
             self.clinreport.target_sample = target_sample
             self.clinreport.get_data()
             for sample in self.clinreport.all_samples:
@@ -137,6 +156,7 @@ class ConfirmationWindow(tk.Toplevel):
 
     def __init__(self, master, sample: str):
         super().__init__(master)
+        self.database = self.master.database
         self.clinreport = self.master.clinreport
         self.sample = sample
         self.title(f"Образец {self.sample}")
@@ -147,7 +167,7 @@ class ConfirmationWindow(tk.Toplevel):
         self.save_button = tk.Button(self, text="Сохранить как ...", command=self.save_docx)
         self.save_button.pack(pady=5)
 
-        self.upload_button = tk.Button(self, text="Выгрузить в базу")
+        self.upload_button = tk.Button(self, text="Выгрузить в базу", command=self.insert_to_db)
         self.upload_button.pack(pady=5)
 
         self.close_button = tk.Button(self, text="Закрыть", command=self.close)
@@ -212,9 +232,10 @@ class ConfirmationWindow(tk.Toplevel):
         for col in columns:
             tableview.heading(col, text=col)
             tableview.column(col, width=100)
-        tableview.pack(pady=10, padx=10, fill="both", expand=True)
         for row in rows:
             tableview.insert("", tk.END, values=row)
+        tableview.config(height=len(rows)+3 if len(rows) else 0)
+        tableview.pack(pady=10, padx=10, fill="both", expand=True)
         return tableview
 
 
@@ -253,7 +274,24 @@ class ConfirmationWindow(tk.Toplevel):
             try:
                 self.doc.save(filepath)
             except Exception as e:
-                messagebox.showerror("Ошибка", f"Ошибка при выгрузке данных: {e}")
+                messagebox.showerror("Ошибка", f"Ошибка при сохранении документа: {repr(e)}")
+
+
+    def insert_to_db(self) -> None:
+        try:
+            sample_name = str(self.sample).split(".")[0]
+            if self.database.sample_data_exists(sample_name):
+                answer = messagebox.askyesno(
+                    "Найден дубликат образца",
+                    f'Для образца "{sample_name}" есть записи в БД. Вы хотите записать еще?'
+                )
+                if not answer:
+                    return
+            sample_payload = self.clinreport.sample_data_to_payload(self.clinreport.data[self.sample])
+            self.database.insert(sample_payload)
+            messagebox.showinfo("Успешно", f"{len(sample_payload)} вариант(ов) успешно выгружены")
+        except Exception as e:
+            messagebox.showerror("Ошибка", f"Ошибка при выгрузке данных: {repr(e)}")
 
 
     def close(self) -> None:
@@ -266,27 +304,28 @@ class SettingsWindow(tk.Toplevel):
     def __init__(self, master):
         super().__init__(master)
         self.title("Настройки")
-        self.geometry("300x150")  # Установите желаемый размер
+        self.geometry("420x300")  # Установите желаемый размер
 
-        self.label = ttk.Label(self, text="Клинический биоинформатик")
-        self.label.pack(pady=5)
-
-        self.entry = ttk.Entry(self)
-        self.entry.pack(pady=5)
-        self.entry.insert(0, self.master.config.get("Клинический биоинформатик", "")) # Заполняем текущим значением
+        self.labels, self.entries = {}, {}
+        for row, (key, value) in enumerate(self.master.config.items()):
+            self.labels[key] = ttk.Label(self, text=f"{key}:")
+            self.labels[key].grid(row=row, column=0, padx=5, pady=5, sticky=tk.W)
+            self.entries[key] = ttk.Entry(self)
+            self.entries[key].insert(0, str(value))  # Преобразуем значение в строку
+            self.entries[key].grid(row=row, column=1, padx=5, pady=5, sticky=tk.EW)
 
         self.save_button = tk.Button(self, text="Сохранить", command=self.save_settings)
-        self.save_button.pack(pady=10)
+        self.save_button.grid(row=len(self.entries)+1, column=0, columnspan=2, padx=5, pady=10)
 
 
     def save_settings(self):
         """Сохраняет настройки в json."""
-        new_value = self.entry.get()
-        self.master.config["Клинический биоинформатик"] = new_value  # Обновляем значение ключа
+        for key, entry in self.entries.items():
+            self.master.config[key] = entry.get()
         try:
             with open(self.master.config_path, 'w') as f:
                 json.dump(self.master.config, f)
-            self.destroy()  # Закрываем окно настроек после сохранения
+            self.destroy()
         except Exception as e:
             messagebox.showerror("Ошибка", f"Ошибка при сохранении настроек: {repr(e)}")
 

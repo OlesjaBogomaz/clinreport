@@ -7,17 +7,17 @@ from datetime import date
 from math import log, floor
 import argparse
 import sqlite3
-# import pandas as pd
+import pandas as pd
 
 
 class ClinReport:
 
-    def __init__(self, cravat_sqlite: str, target_sample: str | None = None, clinician: str | None = None):
+    def __init__(self, cravat_sqlite: str, target_sample: str | None = None, clinician: str | None = None, ru_annotations: dict | None = None):
         self.cravat_sqlite = cravat_sqlite
         self.all_samples = self.get_all_samples()
         self.target_sample = target_sample or self.all_samples[0]
         self.clinician = clinician or ''
-        self.ru_annotations = self.get_ru_annotations()
+        self.ru_annotations = ru_annotations
         self.data = None
 
 
@@ -26,17 +26,6 @@ class ClinReport:
             cur = con.cursor()
             all_samples = [row[0] for row in cur.execute('select distinct base__sample_id from sample;').fetchall()]
             return all_samples
-
-
-    def get_ru_annotations(self) -> dict:
-        url = 'https://docs.google.com/spreadsheets/d/1Zj_Gw-TolcoKljqfk4eCrQ1hyhlZDs44UOZbFTVTfes'
-        try:
-            return {
-                'omim': pd.read_csv(f'{url}/export?format=csv&gid=0', index_col=0).to_dict(),
-                'secondary': pd.read_csv(f'{url}/export?format=csv&gid=706494431', index_col=0).to_dict()
-            }
-        except:
-            return {}
 
 
     def generate_reports(self) -> dict:
@@ -106,7 +95,7 @@ class ClinReport:
         return [self.process_variant_data(variant_data, ru_annotation=ru_annotation) for variant_data in variants_data]        
 
 
-    def process_variant_data(self, variant_data: dict, ru_annotation=False) -> dict:
+    def process_variant_data(self, variant_data: dict, ru_annotation: bool=False) -> dict:
         """
         Aggregate variant data
         """
@@ -136,17 +125,18 @@ class ClinReport:
         ad = variant_data['tagsampler_new__ad'] or '_'
         dp = variant_data['tagsampler_new__dp'] or '_'
         cover_msg = f'{ad}x/{dp}x'
+        if ru_annotation and self.ru_annotations:
+            if note == '7':
+                omim_pheno = self.ru_annotations.get('secondary', {}).get('Disease/Phentyope', {}).get(symbol, omim_pheno)
+                inher_msg = self.ru_annotations.get('secondary', {}).get('Inheritance', {}).get(symbol, inher_msg)
+            else:
+                omim_pheno = self.ru_annotations.get('omim', {}).get('Ассоциированное заболевание', {}).get(symbol, omim_pheno)
         if note == '8':
             # "carrier" variants
-            if ru_annotation:
-                omim_pheno = self.ru_annotations.get('omim', {}).get('Ассоциированное заболевание', {}).get(symbol, omim_pheno)
             clinvar_sig = variant_data["clinvar_new__sig"]
             clinsig_msg = self.clinsig2msg.get(clinvar_sig, '-')
         else:
             clinsig_msg = self.note2clinsig[note].capitalize()
-            if ru_annotation:
-                omim_pheno = self.ru_annotations.get('secondary', {}).get('Disease/Phentyope', {}).get(symbol, omim_pheno)
-                inher_msg = self.ru_annotations.get('secondary', {}).get('Inheritance', {}).get(symbol, inher_msg)
         zygosity_inher_msg = f'{zygosity_msg}\n({inher_msg})'
         clin_type = self.note2type.get(note)
         variant_data.update({
@@ -160,6 +150,29 @@ class ClinReport:
             "Тип": clin_type
         })
         return variant_data
+
+
+    def sample_data_to_payload(self, sample_data: dict) -> pd.DataFrame:
+        common_columns = [
+            "Номер образца",
+            "Пол пациента",
+            "Возраст пациента",
+            "Предварительный диагноз",
+        ]
+        variant_data_columns = [
+            "Ген",
+            "Ассоциированное заболевание (OMIM)",
+            "Изменение ДНК (HG38) (Изменение белка)",
+            "Зиготность (Тип наследования)",
+            "Частота*",
+            "Кол-во прочтений (АЛТ/ОБЩ)",
+            "Патогенность",
+            "Тип"
+        ]
+        sample_payload = [{col: sample_variant_data[col] for col in variant_data_columns} for sample_variant_data in sample_data['variants_data']]
+        for sample_variant_data in sample_payload:
+            sample_variant_data.update({col: sample_data[col] for col in common_columns})
+        return pd.DataFrame(sample_payload)
 
 
     def create_doc(self, sample: str, dzm: bool=True) -> Document:
