@@ -3,7 +3,6 @@
 
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, CENTER
-import yaml
 import os
 import sys
 import sqlite3
