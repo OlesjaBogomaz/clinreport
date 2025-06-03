@@ -53,4 +53,4 @@ python3
 
 ### How to crate Windows/MacOS application
 
-`pyinstaller --onefile --windowed --name <app-name> app.py`
+`pyinstaller --onefile --windowed --add-data "clinreport_config.json:" --name clinreport app.py`
