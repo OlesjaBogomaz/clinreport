@@ -40,9 +40,10 @@ class Database:
                 con=conn
             )
         return bool(len(sample_data))
-    def get_similar_variants(self, variant_data):
+    
+    
+    def get_similar_variants(self, dna_change):
             """Запрос к БД для получения похожих вариантов"""
-            dna_change = variant_data['Изменение ДНК (HG38) (Изменение белка)'].split('\n')[0]
             with self.conn() as conn:
                 query = f"""
                     SELECT 
